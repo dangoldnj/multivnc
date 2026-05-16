@@ -87,6 +87,7 @@ public class VncCanvasActivity extends AppCompatActivity implements PopupMenu.On
 	ZoomControls zoomer;
 	TextView zoomLevel;
 	PointerInputHandler inputHandler;
+	InputMode inputMode = InputMode.DEFAULT;
 
 	ViewGroup mousebuttons;
 	TouchPointView touchpoints;
@@ -161,6 +162,7 @@ public class VncCanvasActivity extends AppCompatActivity implements PopupMenu.On
 		notificationToast.setGravity(Gravity.TOP, 0, 60);
 
 		inputHandler = new PointerInputHandler(vncCanvas, mousebuttons, notificationToast);
+		inputHandler.setInputMode(inputMode);
 		inputHandler.init();
 
 		/*
@@ -503,6 +505,7 @@ public class VncCanvasActivity extends AppCompatActivity implements PopupMenu.On
 	 */
 	private void prepareFabMenu(PopupMenu popupMenu) {
 		Menu menu = popupMenu.getMenu();
+		menu.findItem(R.id.itemToggleJumpInputMode).setChecked(inputMode == InputMode.JUMP);
 		if (touchpoints.getVisibility() == View.VISIBLE) {
 			menu.findItem(R.id.itemColorMode).setVisible(false);
 			menu.findItem(R.id.itemTogglePointerHighlight).setVisible(false);
@@ -553,6 +556,15 @@ public class VncCanvasActivity extends AppCompatActivity implements PopupMenu.On
 				ed.putBoolean(Constants.PREFS_KEY_MOUSEBUTTONS, true);
 			}
 			ed.commit();
+			return true;
+
+		case R.id.itemToggleJumpInputMode:
+			if(inputMode == InputMode.JUMP)
+				inputMode = InputMode.DEFAULT;
+			else
+				inputMode = InputMode.JUMP;
+
+			inputHandler.setInputMode(inputMode);
 			return true;
 
 		case R.id.itemTogglePointerHighlight:

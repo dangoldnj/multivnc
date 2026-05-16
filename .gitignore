@@ -43,3 +43,7 @@ macos/build-dir/
 
 # OS files
 .DS_Store
+
+# android studio files
+.idea/
+
