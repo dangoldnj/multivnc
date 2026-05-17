@@ -28,6 +28,7 @@ ExternalProject_Add(ep-libjpeg-turbo
         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
         -DCMAKE_ASM_FLAGS=${CMAKE_ASM_FLAGS} # as per https://github.com/libjpeg-turbo/libjpeg-turbo/blob/main/BUILDING.md#building-libjpeg-turbo-for-android
         -DENABLE_SHARED=OFF
+        -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
 )
 # set these variables so FindJPEG can find the library
 ExternalProject_Get_property(ep-libjpeg-turbo INSTALL_DIR)
@@ -42,7 +43,6 @@ include_directories(${INSTALL_DIR}/include)
 # LibreSSL
 ExternalProject_Add(ep-libressl
         SOURCE_DIR ${CMAKE_SOURCE_DIR}/../../../../libressl
-        PATCH_COMMAND test -x ./configure && echo "LibreSSL already prepared" || ./autogen.sh
         BINARY_DIR ${CMAKE_BINARY_DIR}/libssl
         INSTALL_DIR ${CMAKE_BINARY_DIR}/libssl-install
         BUILD_BYPRODUCTS <INSTALL_DIR>/lib/libcrypto.a <INSTALL_DIR>/lib/libssl.a
@@ -56,6 +56,7 @@ ExternalProject_Add(ep-libressl
         -DLIBRESSL_APPS=OFF
         -DLIBRESSL_TESTS=OFF
         -DBUILD_SHARED_LIBS=OFF
+        -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
 )
 # set these to cache variables so FindOpenSSL in subdirs can reliably find the library
 ExternalProject_Get_property(ep-libressl INSTALL_DIR)
