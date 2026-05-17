@@ -505,7 +505,6 @@ public class VncCanvasActivity extends AppCompatActivity implements PopupMenu.On
 	 */
 	private void prepareFabMenu(PopupMenu popupMenu) {
 		Menu menu = popupMenu.getMenu();
-		menu.findItem(R.id.itemToggleJumpInputMode).setChecked(inputMode == InputMode.JUMP);
 		if (touchpoints.getVisibility() == View.VISIBLE) {
 			menu.findItem(R.id.itemColorMode).setVisible(false);
 			menu.findItem(R.id.itemTogglePointerHighlight).setVisible(false);
