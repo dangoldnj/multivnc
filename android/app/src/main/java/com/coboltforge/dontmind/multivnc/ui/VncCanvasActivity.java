@@ -240,6 +240,7 @@ public class VncCanvasActivity extends AppCompatActivity implements PopupMenu.On
 			connection.parseHostPort(connection.address);
 		}
 
+		inputMode = InputMode.fromValue(connection.inputMode);
 
 		/*
 		 * Setup canvas and conn.
