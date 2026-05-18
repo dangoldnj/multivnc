@@ -112,6 +112,16 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
         return inputMode;
     }
 
+    private boolean isJumpInputMode() {
+        return inputMode == InputMode.JUMP;
+    }
+
+    private boolean movePointerToTap(MotionEvent e) {
+        vncCanvas.changeTouchCoordinatesToFullFrame(e);
+        vncCanvas.warpMouse((int)e.getX(), (int)e.getY());
+        return true;
+    }
+
     protected boolean isTouchEvent(MotionEvent event) {
         return event.getSource() == InputDevice.SOURCE_TOUCHSCREEN ||
                 event.getSource() == InputDevice.SOURCE_TOUCHPAD;
@@ -224,6 +234,9 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
 
         if(Utils.DEBUG()) Log.d(TAG, "Input: long press");
 
+        if (isJumpInputMode())
+            return;
+
         dragMode = true;
         dragX = e.getX();
         dragY = e.getY();
@@ -320,6 +333,11 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
         }
         else
         {
+            if (isJumpInputMode()) {
+                if(Utils.DEBUG()) Log.d(TAG, "Input: Jump-style single touch pan");
+                return vncCanvas.pan((int) distanceX, (int) distanceY);
+            }
+
             // compute the relative movement offset on the remote screen.
             float deltaX = -distanceX;
             float deltaY = -distanceY;
@@ -527,6 +545,9 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
         if (!isTouchEvent(e))
             return false;
 
+        if (isJumpInputMode())
+            return movePointerToTap(e);
+
         // disable if virtual mouse buttons are in use
         if(mousebuttons.getVisibility()== View.VISIBLE)
             return false;
@@ -549,6 +570,9 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
 
         if (!isTouchEvent(e))
             return false;
+
+        if (isJumpInputMode())
+            return movePointerToTap(e);
 
         // disable if virtual mouse buttons are in use
         if(mousebuttons.getVisibility()== View.VISIBLE)
