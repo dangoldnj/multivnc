@@ -10,6 +10,7 @@ import android.view.ScaleGestureDetector;
 import android.view.SoundEffectConstants;
 import android.view.VelocityTracker;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.widget.Toast;
 
@@ -63,6 +64,14 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
     float dragX, dragY;
     private boolean dragModeButtonDown = false;
     private boolean dragModeButton2insteadof1 = false;
+    private boolean jumpTargetGestureActive = false;
+    private boolean jumpTargetTapCandidate = false;
+    private boolean jumpTargetLongPressed = false;
+    private boolean jumpTargetDragged = false;
+    private boolean jumpTargetDoubleTapActive = false;
+    private boolean jumpTargetDoubleTapDragging = false;
+    private float jumpTargetStartX, jumpTargetStartY;
+    private final int touchSlopSquared;
 
     /*
      * two-finger fling gesture stuff
@@ -81,6 +90,8 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
         gestures.setOnDoubleTapListener(this);
         scaleGestures = new ScaleGestureDetector(vncCanvas.getContext(), this);
         scaleGestures.setQuickScaleEnabled(false);
+        int touchSlop = ViewConfiguration.get(vncCanvas.getContext()).getScaledTouchSlop();
+        touchSlopSquared = touchSlop * touchSlop;
 
         Log.d(TAG, "MightyInputHandler " + this +  " created!");
     }
@@ -118,14 +129,78 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
         return inputMode == InputMode.JUMP;
     }
 
-    private boolean movePointerToTap(MotionEvent e) {
+    private boolean movePointerToTapAndClick(MotionEvent e) {
         vncCanvas.changeTouchCoordinatesToFullFrame(e);
-        vncCanvas.warpMouse((int)e.getX(), (int)e.getY());
+        vncCanvas.processMouseEvent(VNCConn.MOUSE_BUTTON_NONE, false, (int)e.getX(), (int)e.getY());
+        vncCanvas.clickMouseButton(VNCConn.MOUSE_BUTTON_LEFT);
         return true;
     }
 
     private boolean isJumpTargetHit(MotionEvent e) {
         return isJumpInputMode() && vncCanvas.isJumpTargetHit(e.getX(), e.getY());
+    }
+
+    private boolean shouldHandleJumpTargetTap(MotionEvent e) {
+        return isJumpInputMode() && (jumpTargetTapCandidate || jumpTargetDoubleTapActive);
+    }
+
+    private void beginJumpTargetGesture(MotionEvent e) {
+        jumpTargetGestureActive = true;
+        jumpTargetTapCandidate = true;
+        jumpTargetLongPressed = false;
+        jumpTargetDragged = false;
+        jumpTargetDoubleTapActive = false;
+        jumpTargetDoubleTapDragging = false;
+        jumpTargetStartX = e.getX();
+        jumpTargetStartY = e.getY();
+        vncCanvas.setJumpTargetPressed(true);
+    }
+
+    private void clearJumpTargetGesture() {
+        jumpTargetGestureActive = false;
+        jumpTargetLongPressed = false;
+        jumpTargetDragged = false;
+        jumpTargetDoubleTapActive = false;
+        jumpTargetDoubleTapDragging = false;
+        vncCanvas.setJumpTargetPressed(false);
+    }
+
+    private void releaseJumpTargetPress() {
+        jumpTargetGestureActive = false;
+        jumpTargetLongPressed = false;
+        jumpTargetDragged = false;
+        vncCanvas.setJumpTargetPressed(false);
+    }
+
+    private boolean sendJumpTargetClick(int button) {
+        vncCanvas.clickMouseButton(button);
+        jumpTargetTapCandidate = false;
+        clearJumpTargetGesture();
+        return true;
+    }
+
+    private boolean sendJumpTargetDoubleClick() {
+        vncCanvas.clickMouseButton(VNCConn.MOUSE_BUTTON_LEFT);
+        vncCanvas.clickMouseButton(VNCConn.MOUSE_BUTTON_LEFT);
+        jumpTargetTapCandidate = false;
+        clearJumpTargetGesture();
+        return true;
+    }
+
+    private boolean moveJumpTargetDrag(MotionEvent e) {
+        vncCanvas.moveMouseForJumpTargetCenter(e.getX(), e.getY());
+        return true;
+    }
+
+    private boolean moveJumpTargetMarqueeDrag(MotionEvent e) {
+        vncCanvas.dragMouseButtonForJumpTargetCenter(VNCConn.MOUSE_BUTTON_LEFT, e.getX(), e.getY());
+        return true;
+    }
+
+    private boolean isPastJumpTargetDragSlop(MotionEvent e) {
+        float dx = e.getX() - jumpTargetStartX;
+        float dy = e.getY() - jumpTargetStartY;
+        return dx * dx + dy * dy > touchSlopSquared;
     }
 
     protected boolean isTouchEvent(MotionEvent event) {
@@ -168,7 +243,7 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
     public boolean onScaleBegin(ScaleGestureDetector detector) {
         xInitialFocus = detector.getFocusX();
         yInitialFocus = detector.getFocusY();
-        inScaling = false;
+        inScaling = isJumpInputMode();
         //Log.i(TAG,"scale begin ("+xInitialFocus+","+yInitialFocus+")");
         return true;
     }
@@ -240,6 +315,15 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
 
         if(Utils.DEBUG()) Log.d(TAG, "Input: long press");
 
+        if (jumpTargetGestureActive) {
+            if(Utils.DEBUG()) Log.d(TAG, "Input: Jump-style target long press");
+            jumpTargetTapCandidate = false;
+            jumpTargetLongPressed = true;
+            jumpTargetDragged = false;
+            vncCanvas.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            return;
+        }
+
         if (isJumpInputMode())
             return;
 
@@ -267,6 +351,9 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
         if (e2.getPointerCount() > 1)
         {
             if(Utils.DEBUG()) Log.d(TAG, "Input: scroll multitouch");
+
+            if (isJumpInputMode() && e2.getPointerCount() == 2 && scaleGestures.isInProgress())
+                return false;
 
             if (inScaling)
                 return false;
@@ -339,8 +426,18 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
         }
         else
         {
-            if (isJumpTargetHit(e1))
+            if (jumpTargetGestureActive) {
+                if (isPastJumpTargetDragSlop(e2)) {
+                    jumpTargetTapCandidate = false;
+                    jumpTargetDragged = true;
+                    if (jumpTargetDoubleTapActive) {
+                        jumpTargetDoubleTapDragging = true;
+                        return moveJumpTargetMarqueeDrag(e2);
+                    }
+                    return moveJumpTargetDrag(e2);
+                }
                 return true;
+            }
 
             if (isJumpInputMode()) {
                 if(Utils.DEBUG()) Log.d(TAG, "Input: Jump-style single touch pan");
@@ -377,6 +474,57 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
             vncCanvas.processPointerEvent(e2, false);
         }
         return false;
+    }
+
+    private boolean handleJumpTargetTouchEvent(MotionEvent e) {
+        if (!isJumpInputMode())
+            return false;
+
+        switch (e.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                jumpTargetTapCandidate = false;
+                if (isJumpTargetHit(e)) {
+                    beginJumpTargetGesture(e);
+                    return false;
+                }
+                clearJumpTargetGesture();
+                return false;
+
+            case MotionEvent.ACTION_CANCEL:
+                jumpTargetTapCandidate = false;
+                if (jumpTargetDoubleTapDragging)
+                    vncCanvas.releaseMouseButton(VNCConn.MOUSE_BUTTON_LEFT);
+                clearJumpTargetGesture();
+                return true;
+
+            case MotionEvent.ACTION_UP:
+                if (jumpTargetGestureActive) {
+                    if (jumpTargetDoubleTapDragging)
+                        vncCanvas.releaseMouseButton(VNCConn.MOUSE_BUTTON_LEFT);
+                    if (jumpTargetLongPressed && !jumpTargetDragged) {
+                        vncCanvas.clickMouseButton(VNCConn.MOUSE_BUTTON_RIGHT);
+                        clearJumpTargetGesture();
+                    }
+                    else if (jumpTargetDragged || jumpTargetDoubleTapDragging)
+                        clearJumpTargetGesture();
+                    else
+                        releaseJumpTargetPress();
+                    return false;
+                }
+                return false;
+
+            default:
+                if (jumpTargetGestureActive && isPastJumpTargetDragSlop(e)) {
+                    jumpTargetTapCandidate = false;
+                    jumpTargetDragged = true;
+                    if (jumpTargetDoubleTapActive) {
+                        jumpTargetDoubleTapDragging = true;
+                        return moveJumpTargetMarqueeDrag(e);
+                    }
+                    return moveJumpTargetDrag(e);
+                }
+                return false;
+        }
     }
 
 
@@ -451,6 +599,10 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
 
         if(Utils.DEBUG())
             Log.d(TAG, "Input: touch normal: x:" + e.getX() + " y:" + e.getY() + " action:" + e.getAction());
+
+        boolean handledByJumpTarget = handleJumpTargetTouchEvent(e);
+        if (handledByJumpTarget)
+            return true;
 
         scaleGestures.onTouchEvent(e);
         return gestures.onTouchEvent(e);
@@ -554,11 +706,11 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
         if (!isTouchEvent(e))
             return false;
 
-        if (isJumpTargetHit(e))
-            return true;
+        if (shouldHandleJumpTargetTap(e))
+            return sendJumpTargetClick(VNCConn.MOUSE_BUTTON_LEFT);
 
         if (isJumpInputMode())
-            return movePointerToTap(e);
+            return movePointerToTapAndClick(e);
 
         // disable if virtual mouse buttons are in use
         if(mousebuttons.getVisibility()== View.VISIBLE)
@@ -583,11 +735,14 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
         if (!isTouchEvent(e))
             return false;
 
-        if (isJumpTargetHit(e))
+        if (shouldHandleJumpTargetTap(e)) {
+            jumpTargetDoubleTapActive = true;
+            jumpTargetDoubleTapDragging = false;
             return true;
+        }
 
         if (isJumpInputMode())
-            return movePointerToTap(e);
+            return movePointerToTapAndClick(e);
 
         // disable if virtual mouse buttons are in use
         if(mousebuttons.getVisibility()== View.VISIBLE)
@@ -602,6 +757,46 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
         vncCanvas.processPointerEvent(e, true, true);
         e.setAction(MotionEvent.ACTION_UP);
         return vncCanvas.processPointerEvent(e, false, true);
+    }
+
+    @Override
+    public boolean onDoubleTapEvent(MotionEvent e) {
+        if (!shouldHandleJumpTargetTap(e))
+            return false;
+
+        switch (e.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                jumpTargetDoubleTapActive = true;
+                jumpTargetDoubleTapDragging = false;
+                return true;
+
+            case MotionEvent.ACTION_MOVE:
+                if (isPastJumpTargetDragSlop(e)) {
+                    jumpTargetTapCandidate = false;
+                    jumpTargetDragged = true;
+                    jumpTargetDoubleTapActive = true;
+                    jumpTargetDoubleTapDragging = true;
+                    return moveJumpTargetMarqueeDrag(e);
+                }
+                return true;
+
+            case MotionEvent.ACTION_UP:
+                if (jumpTargetDoubleTapDragging) {
+                    vncCanvas.releaseMouseButton(VNCConn.MOUSE_BUTTON_LEFT);
+                    clearJumpTargetGesture();
+                    return true;
+                }
+                return sendJumpTargetDoubleClick();
+
+            case MotionEvent.ACTION_CANCEL:
+                if (jumpTargetDoubleTapDragging)
+                    vncCanvas.releaseMouseButton(VNCConn.MOUSE_BUTTON_LEFT);
+                clearJumpTargetGesture();
+                return true;
+
+            default:
+                return true;
+        }
     }
 
 
