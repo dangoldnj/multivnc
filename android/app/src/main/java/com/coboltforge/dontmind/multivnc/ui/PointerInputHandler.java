@@ -106,6 +106,8 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
             this.inputMode = InputMode.DEFAULT;
         else
             this.inputMode = inputMode;
+
+        vncCanvas.reDraw();
     }
 
     public InputMode getInputMode() {
@@ -120,6 +122,10 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
         vncCanvas.changeTouchCoordinatesToFullFrame(e);
         vncCanvas.warpMouse((int)e.getX(), (int)e.getY());
         return true;
+    }
+
+    private boolean isJumpTargetHit(MotionEvent e) {
+        return isJumpInputMode() && vncCanvas.isJumpTargetHit(e.getX(), e.getY());
     }
 
     protected boolean isTouchEvent(MotionEvent event) {
@@ -333,6 +339,9 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
         }
         else
         {
+            if (isJumpTargetHit(e1))
+                return true;
+
             if (isJumpInputMode()) {
                 if(Utils.DEBUG()) Log.d(TAG, "Input: Jump-style single touch pan");
                 return vncCanvas.pan((int) distanceX, (int) distanceY);
@@ -545,6 +554,9 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
         if (!isTouchEvent(e))
             return false;
 
+        if (isJumpTargetHit(e))
+            return true;
+
         if (isJumpInputMode())
             return movePointerToTap(e);
 
@@ -570,6 +582,9 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
 
         if (!isTouchEvent(e))
             return false;
+
+        if (isJumpTargetHit(e))
+            return true;
 
         if (isJumpInputMode())
             return movePointerToTap(e);
