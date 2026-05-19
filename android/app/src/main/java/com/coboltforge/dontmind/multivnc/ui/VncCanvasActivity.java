@@ -162,7 +162,6 @@ public class VncCanvasActivity extends AppCompatActivity implements PopupMenu.On
 		notificationToast.setGravity(Gravity.TOP, 0, 60);
 
 		inputHandler = new PointerInputHandler(vncCanvas, mousebuttons, notificationToast);
-		inputHandler.setInputMode(inputMode);
 		inputHandler.init();
 
 		/*
@@ -241,6 +240,7 @@ public class VncCanvasActivity extends AppCompatActivity implements PopupMenu.On
 		}
 
 		inputMode = InputMode.fromValue(connection.inputMode);
+		inputHandler.setInputMode(inputMode);
 
 		/*
 		 * Setup canvas and conn.

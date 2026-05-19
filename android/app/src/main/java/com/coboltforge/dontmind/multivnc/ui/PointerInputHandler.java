@@ -35,6 +35,9 @@ import com.coboltforge.dontmind.multivnc.db.MetaKeyBean;
 public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener implements ScaleGestureDetector.OnScaleGestureListener {
 
     private static final String TAG = "PointerInputHandler";
+    private static final int JUMP_TAP_MOVE_ANIMATION_DURATION_MS = 50;
+    private static final int JUMP_TAP_MOVE_ANIMATION_STEPS = 5;
+    private static final int JUMP_TARGET_RIGHT_CLICK_DELAY_MS = 667;
 
     private final VncCanvas vncCanvas;
     private final ViewGroup mousebuttons;
@@ -72,6 +75,18 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
     private boolean jumpTargetDoubleTapDragging = false;
     private float jumpTargetStartX, jumpTargetStartY;
     private final int touchSlopSquared;
+    private final Runnable jumpTargetRightClickRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!jumpTargetGestureActive || jumpTargetDragged || jumpTargetDoubleTapActive)
+                return;
+
+            jumpTargetTapCandidate = false;
+            jumpTargetLongPressed = true;
+            vncCanvas.clickMouseButton(VNCConn.MOUSE_BUTTON_RIGHT);
+            vncCanvas.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        }
+    };
 
     /*
      * two-finger fling gesture stuff
@@ -130,10 +145,35 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
     }
 
     private boolean movePointerToTapAndClick(MotionEvent e) {
+        int startX = vncCanvas.mouseX;
+        int startY = vncCanvas.mouseY;
         vncCanvas.changeTouchCoordinatesToFullFrame(e);
-        vncCanvas.processMouseEvent(VNCConn.MOUSE_BUTTON_NONE, false, (int)e.getX(), (int)e.getY());
-        vncCanvas.clickMouseButton(VNCConn.MOUSE_BUTTON_LEFT);
+        animatePointerToTapAndClick(startX, startY, (int)e.getX(), (int)e.getY());
         return true;
+    }
+
+    private void animatePointerToTapAndClick(final int startX, final int startY, final int endX, final int endY) {
+        final int stepDelayMs = JUMP_TAP_MOVE_ANIMATION_DURATION_MS / JUMP_TAP_MOVE_ANIMATION_STEPS;
+        vncCanvas.handler.postDelayed(new Runnable() {
+            private int step = 0;
+
+            @Override
+            public void run() {
+                step++;
+                float progress = (float)step / JUMP_TAP_MOVE_ANIMATION_STEPS;
+                int x = (int)(startX + (endX - startX) * progress);
+                int y = (int)(startY + (endY - startY) * progress);
+                vncCanvas.warpMouseAndRefreshRemoteCursor(x, y);
+
+                if (step < JUMP_TAP_MOVE_ANIMATION_STEPS) {
+                    vncCanvas.handler.postDelayed(this, stepDelayMs);
+                }
+                else {
+                    vncCanvas.clickMouseButton(VNCConn.MOUSE_BUTTON_LEFT);
+                    vncCanvas.refreshRemoteCursor();
+                }
+            }
+        }, stepDelayMs);
     }
 
     private boolean isJumpTargetHit(MotionEvent e) {
@@ -154,9 +194,12 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
         jumpTargetStartX = e.getX();
         jumpTargetStartY = e.getY();
         vncCanvas.setJumpTargetPressed(true);
+        vncCanvas.handler.removeCallbacks(jumpTargetRightClickRunnable);
+        vncCanvas.handler.postDelayed(jumpTargetRightClickRunnable, JUMP_TARGET_RIGHT_CLICK_DELAY_MS);
     }
 
     private void clearJumpTargetGesture() {
+        vncCanvas.handler.removeCallbacks(jumpTargetRightClickRunnable);
         jumpTargetGestureActive = false;
         jumpTargetLongPressed = false;
         jumpTargetDragged = false;
@@ -166,6 +209,7 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
     }
 
     private void releaseJumpTargetPress() {
+        vncCanvas.handler.removeCallbacks(jumpTargetRightClickRunnable);
         jumpTargetGestureActive = false;
         jumpTargetLongPressed = false;
         jumpTargetDragged = false;
@@ -317,10 +361,6 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
 
         if (jumpTargetGestureActive) {
             if(Utils.DEBUG()) Log.d(TAG, "Input: Jump-style target long press");
-            jumpTargetTapCandidate = false;
-            jumpTargetLongPressed = true;
-            jumpTargetDragged = false;
-            vncCanvas.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
             return;
         }
 
@@ -492,21 +532,28 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
 
             case MotionEvent.ACTION_CANCEL:
                 jumpTargetTapCandidate = false;
-                if (jumpTargetDoubleTapDragging)
+                if (jumpTargetDoubleTapDragging) {
                     vncCanvas.releaseMouseButton(VNCConn.MOUSE_BUTTON_LEFT);
+                    vncCanvas.refreshRemoteCursor();
+                }
+                else if (jumpTargetDragged) {
+                    vncCanvas.refreshRemoteCursor();
+                }
                 clearJumpTargetGesture();
                 return true;
 
             case MotionEvent.ACTION_UP:
                 if (jumpTargetGestureActive) {
-                    if (jumpTargetDoubleTapDragging)
+                    if (jumpTargetDoubleTapDragging) {
                         vncCanvas.releaseMouseButton(VNCConn.MOUSE_BUTTON_LEFT);
-                    if (jumpTargetLongPressed && !jumpTargetDragged) {
-                        vncCanvas.clickMouseButton(VNCConn.MOUSE_BUTTON_RIGHT);
+                        vncCanvas.refreshRemoteCursor();
+                    }
+                    if (jumpTargetLongPressed && !jumpTargetDragged)
+                        clearJumpTargetGesture();
+                    else if (jumpTargetDragged || jumpTargetDoubleTapDragging) {
+                        vncCanvas.refreshRemoteCursor();
                         clearJumpTargetGesture();
                     }
-                    else if (jumpTargetDragged || jumpTargetDoubleTapDragging)
-                        clearJumpTargetGesture();
                     else
                         releaseJumpTargetPress();
                     return false;
@@ -783,14 +830,17 @@ public class PointerInputHandler extends GestureDetector.SimpleOnGestureListener
             case MotionEvent.ACTION_UP:
                 if (jumpTargetDoubleTapDragging) {
                     vncCanvas.releaseMouseButton(VNCConn.MOUSE_BUTTON_LEFT);
+                    vncCanvas.refreshRemoteCursor();
                     clearJumpTargetGesture();
                     return true;
                 }
                 return sendJumpTargetDoubleClick();
 
             case MotionEvent.ACTION_CANCEL:
-                if (jumpTargetDoubleTapDragging)
+                if (jumpTargetDoubleTapDragging) {
                     vncCanvas.releaseMouseButton(VNCConn.MOUSE_BUTTON_LEFT);
+                    vncCanvas.refreshRemoteCursor();
+                }
                 clearJumpTargetGesture();
                 return true;
 

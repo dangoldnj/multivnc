@@ -350,6 +350,7 @@ public class ConnectionEditFragment extends Fragment {
         setSpinnerByEnum(compressSpinner, COMPRESSMODEL.values(), COMPRESSMODEL.valueOf(conn.compressModel));
         setSpinnerByEnum(qualitySpinner, QUALITYMODEL.values(), QUALITYMODEL.valueOf(conn.qualityModel));
         jumpModeSwitch.setChecked(InputMode.JUMP == InputMode.fromValue(conn.inputMode));
+        view.findViewById(R.id.input_mode_row).setVisibility(View.VISIBLE);
 
         // if this is a connection that was not bookmarked, stop here
         if (conn.id == 0)
@@ -360,7 +361,6 @@ public class ConnectionEditFragment extends Fragment {
         view.findViewById(R.id.color_mode_row).setVisibility(View.VISIBLE);
         view.findViewById(R.id.compression_level_row).setVisibility(View.VISIBLE);
         view.findViewById(R.id.quality_level_row).setVisibility(View.VISIBLE);
-        view.findViewById(R.id.input_mode_row).setVisibility(View.VISIBLE);
 
         bookmarkNameText.setText(conn.nickname);
         ipText.setText(conn.address);
